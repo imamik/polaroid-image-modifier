@@ -447,95 +447,102 @@ def _add_chemical_edge_distortion(image: Image.Image, intensity: float = 1.0, se
     noise_top = _generate_perlin_noise_2d_fast((height, width), scale=55, octaves=3, seed=(seed + 2) if seed else None)
     noise_bottom = _generate_perlin_noise_2d_fast((height, width), scale=40, octaves=4, seed=(seed + 3) if seed else None)
     
-    # Edge falloff width (as fraction of image dimension)
-    edge_width = 0.08
+    # Edge falloff width (as fraction of image dimension) - wider for more visible effect
+    edge_width = 0.12
     
     # --- LEFT EDGE: Blue/Cyan/Magenta ---
     left_mask = np.clip(1 - dist_left / edge_width, 0, 1)
-    left_mask = left_mask * (0.5 + 0.5 * noise_left)  # Modulate with noise
-    left_mask = left_mask ** 1.5  # Sharper falloff
+    left_mask = left_mask * (0.6 + 0.4 * noise_left)  # Modulate with noise
+    left_mask = left_mask ** 1.2  # Softer falloff for wider spread
     
-    # Color: Mix of cyan (0, 180, 220) and magenta (180, 50, 150)
-    left_color_r = left_mask * (50 * noise_left + 100 * (1 - noise_left))
-    left_color_g = left_mask * (100 * noise_left + 30 * (1 - noise_left))
-    left_color_b = left_mask * (220 * noise_left + 180 * (1 - noise_left))
+    # Color: Mix of cyan and magenta - more saturated
+    left_color_r = left_mask * (80 * noise_left + 150 * (1 - noise_left))
+    left_color_g = left_mask * (120 * noise_left + 50 * (1 - noise_left))
+    left_color_b = left_mask * (255 * noise_left + 220 * (1 - noise_left))
     
-    # --- RIGHT EDGE: Subtle Green/Teal ---
-    right_mask = np.clip(1 - dist_right / (edge_width * 0.7), 0, 1)
-    right_mask = right_mask * (0.4 + 0.6 * noise_right)
-    right_mask = right_mask ** 2  # Even sharper falloff, more subtle
+    # --- RIGHT EDGE: Green/Teal tones ---
+    right_mask = np.clip(1 - dist_right / (edge_width * 0.8), 0, 1)
+    right_mask = right_mask * (0.5 + 0.5 * noise_right)
+    right_mask = right_mask ** 1.5
     
-    right_color_r = right_mask * 40
-    right_color_g = right_mask * (120 * noise_right + 80)
-    right_color_b = right_mask * (150 * noise_right + 100)
+    right_color_r = right_mask * 60
+    right_color_g = right_mask * (160 * noise_right + 100)
+    right_color_b = right_mask * (200 * noise_right + 140)
     
-    # --- TOP EDGE: Blue with pink accents ---
-    top_mask = np.clip(1 - dist_top / (edge_width * 0.8), 0, 1)
-    top_mask = top_mask * (0.5 + 0.5 * noise_top)
-    top_mask = top_mask ** 1.8
+    # --- TOP EDGE: Blue with pink/magenta accents ---
+    top_mask = np.clip(1 - dist_top / (edge_width * 0.9), 0, 1)
+    top_mask = top_mask * (0.6 + 0.4 * noise_top)
+    top_mask = top_mask ** 1.3
     
     # Add occasional pink "light leak" spots
     light_leak_noise = _generate_perlin_noise_2d_fast((height, width), scale=30, octaves=2, seed=(seed + 10) if seed else None)
-    light_leak_mask = (light_leak_noise > 0.7).astype(float) * top_mask * 0.5
+    light_leak_mask = (light_leak_noise > 0.65).astype(float) * top_mask * 0.7
     
-    top_color_r = top_mask * (80 + 100 * light_leak_mask / (top_mask + 0.01))
-    top_color_g = top_mask * 60
-    top_color_b = top_mask * 200
+    top_color_r = top_mask * (100 + 150 * light_leak_mask / (top_mask + 0.01))
+    top_color_g = top_mask * 80
+    top_color_b = top_mask * 240
     
     # --- BOTTOM EDGE: Vertical Orange/Amber Streaks ---
-    bottom_base_mask = np.clip(1 - dist_bottom / (edge_width * 1.2), 0, 1)
+    bottom_base_mask = np.clip(1 - dist_bottom / (edge_width * 1.5), 0, 1)
     
-    # Generate vertical streaks
+    # Generate vertical streaks - more streaks and taller
     streak_mask = _generate_vertical_streaks(width, height, 
-                                              num_streaks=int(width * 0.03),
-                                              max_height_frac=0.15,
+                                              num_streaks=int(width * 0.05),
+                                              max_height_frac=0.20,
                                               seed=seed)
     
-    # Combine base mask with streaks
-    bottom_mask = np.maximum(bottom_base_mask * 0.3, streak_mask)
-    bottom_mask = bottom_mask * (0.6 + 0.4 * noise_bottom)
+    # Combine base mask with streaks - streaks more prominent
+    bottom_mask = np.maximum(bottom_base_mask * 0.4, streak_mask * 1.2)
+    bottom_mask = bottom_mask * (0.7 + 0.3 * noise_bottom)
     
-    # Warm orange/amber color
+    # Warm orange/amber color - more saturated
     bottom_color_r = bottom_mask * 255
-    bottom_color_g = bottom_mask * (140 + 60 * noise_bottom)
-    bottom_color_b = bottom_mask * 40
+    bottom_color_g = bottom_mask * (160 + 50 * noise_bottom)
+    bottom_color_b = bottom_mask * 30
     
     # --- CORNER INTENSIFICATION ---
-    corner_mask = np.zeros((height, width))
     # Bottom-left corner
     corner_bl = np.sqrt((X ** 2) + ((1 - Y) ** 2))
-    corner_bl = np.clip(1 - corner_bl / 0.2, 0, 1) ** 2
+    corner_bl = np.clip(1 - corner_bl / 0.25, 0, 1) ** 1.5
     # Bottom-right corner
     corner_br = np.sqrt(((1 - X) ** 2) + ((1 - Y) ** 2))
-    corner_br = np.clip(1 - corner_br / 0.2, 0, 1) ** 2
+    corner_br = np.clip(1 - corner_br / 0.25, 0, 1) ** 1.5
+    # Top-left corner - add some blue/magenta
+    corner_tl = np.sqrt((X ** 2) + (Y ** 2))
+    corner_tl = np.clip(1 - corner_tl / 0.2, 0, 1) ** 1.5
     
-    corner_mask = corner_bl + corner_br
-    corner_mask = corner_mask * (0.5 + 0.5 * noise_bottom)
+    corner_mask_warm = (corner_bl + corner_br) * (0.6 + 0.4 * noise_bottom)
+    corner_mask_cool = corner_tl * (0.6 + 0.4 * noise_top)
     
-    # Warm corner color
-    corner_color_r = corner_mask * 200
-    corner_color_g = corner_mask * 100
-    corner_color_b = corner_mask * 50
+    # Warm corner color (bottom corners)
+    corner_color_r = corner_mask_warm * 220 + corner_mask_cool * 120
+    corner_color_g = corner_mask_warm * 120 + corner_mask_cool * 60
+    corner_color_b = corner_mask_warm * 50 + corner_mask_cool * 200
     
     # --- COMBINE ALL EFFECTS ---
-    # Use screen blending for additive light-like effect
-    def screen_blend(base, overlay, mask):
-        mask_3d = mask[:, :, np.newaxis] if len(mask.shape) == 2 else mask
-        return base + overlay * mask_3d * (1 - base / 255)
-    
-    # Apply intensity scaling
-    scale = intensity * 0.4  # Base scaling factor
+    # Apply intensity scaling - much higher base factor
+    scale = intensity * 1.0  # Full intensity scaling
     
     # Combine color layers
     overlay_r = (left_color_r + right_color_r + top_color_r + bottom_color_r + corner_color_r) * scale
     overlay_g = (left_color_g + right_color_g + top_color_g + bottom_color_g + corner_color_g) * scale
     overlay_b = (left_color_b + right_color_b + top_color_b + bottom_color_b + corner_color_b) * scale
     
-    # Apply using screen blend
+    # Combined mask for blending strength
+    combined_mask = np.maximum.reduce([left_mask, right_mask, top_mask, bottom_mask, 
+                                        corner_mask_warm, corner_mask_cool])
+    
+    # Use a hybrid blending approach:
+    # - Additive component for visibility on all backgrounds
+    # - Screen component for natural light-like behavior
     result = img_arr.copy()
-    result[:, :, 0] = np.clip(result[:, :, 0] + overlay_r * (1 - result[:, :, 0] / 255), 0, 255)
-    result[:, :, 1] = np.clip(result[:, :, 1] + overlay_g * (1 - result[:, :, 1] / 255), 0, 255)
-    result[:, :, 2] = np.clip(result[:, :, 2] + overlay_b * (1 - result[:, :, 2] / 255), 0, 255)
+    
+    # Additive blend (works on all backgrounds) with 60% weight
+    # Screen blend (natural light behavior) with 40% weight
+    for c, overlay_c in enumerate([overlay_r, overlay_g, overlay_b]):
+        additive = result[:, :, c] + overlay_c * 0.6
+        screen = result[:, :, c] + overlay_c * 0.4 * (1 - result[:, :, c] / 255)
+        result[:, :, c] = np.clip(additive + screen - result[:, :, c], 0, 255)
     
     return Image.fromarray(result.astype(np.uint8))
 

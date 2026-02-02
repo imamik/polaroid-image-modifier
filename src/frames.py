@@ -64,12 +64,12 @@ def add_polaroid_frame(image: Image.Image, frame_type: str = 'polaroid_600') -> 
     # User Request: Radius 6px, Border 1px, Opacity 50%, Anti-aliased
     
     # 1.5 Round Corners and Add Border (Anti-aliased)
-    # User Request: Radius 5px, Border 1px, Opacity 25%, Anti-aliased
+    # User Request: Radius 5px, Border 1px, Opacity 20%, Anti-aliased
     
     radius = 5
     border_width = 1
-    # 25% opacity of dark gray (50, 50, 50) -> alpha ~64
-    border_color = (50, 50, 50, 64)
+    # 20% opacity of dark gray (50, 50, 50) -> alpha ~51
+    border_color = (50, 50, 50, 51)
     
     # Super-sampling factor for anti-aliasing
     scale = 4

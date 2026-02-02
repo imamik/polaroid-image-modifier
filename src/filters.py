@@ -18,37 +18,37 @@ def apply_polaroid_effect(image: Image.Image, film_type: str = 'polaroid',
         chemical_distortion_seed: Random seed for reproducible distortion patterns
     """
     # 0. Auto-Level (Pre-processing)
-    # Cutoff=2 to ensure we clip highlights (overexposure) as requested
     img = _auto_level(image, cutoff=2)
 
-    # 1. Softness / Optical Bloom (Counteract digital sharpness)
+    # 1. Optical softness to counter digital sharpness
     img = _apply_softness_bloom(img)
 
-    # 2. Add Stop Bath / Inward Shadow Border
-    img = _add_stop_bath_border(img, sides='all')
+    # 2. Large soft inbound shadow (below effects)
+    img = _inbound_shadow_soft(img)
 
-    # 3. Color Grading & Tinting
-    # User requested to use Polaroid vintage curves for Instax too
+    # 3. Color grading & tinting
     img = _apply_vintage_curves(img)
     
-    # 4. Lift Blacks (Fade)
-    # Make sure we don't have pure black, but dark gray.
+    # 4. Lift blacks (fade)
     img = _lift_blacks(img, lift_amount=25)
 
-    # 5. Add Chemical Edge Distortion (optional)
+    # 5. Vignette (below chemical effect)
+    vignette_intensity = 0.4 if 'polaroid' in film_type else 0.25
+    img = _add_vignette(img, intensity=vignette_intensity)
+
+    # 6. Chemical edge distortion (on top of vignette)
     if chemical_distortion:
         img = _add_chemical_edge_distortion(img, 
                                             intensity=chemical_distortion_intensity,
                                             seed=chemical_distortion_seed)
 
-    # 6. Add Vignette
-    vignette_intensity = 0.4 if 'polaroid' in film_type else 0.25
-    img = _add_vignette(img, intensity=vignette_intensity)
+    # 7. Thin sharp inbound shadow (above chemical effect)
+    img = _inbound_shadow_sharp(img)
     
-    # 7. Add Film Grain
+    # 8. Film grain
     img = _add_film_grain(img)
     
-    # 8. Final slight desaturation
+    # 9. Final slight desaturation
     sat_amount = 0.85 if 'polaroid' in film_type else 0.95
     enhancer = ImageEnhance.Color(img)
     img = enhancer.enhance(sat_amount)
@@ -111,65 +111,34 @@ def _auto_level(image: Image.Image) -> Image.Image:
         image = image.convert('RGB')
     return ImageOps.autocontrast(image, cutoff=1)
 
-def _add_stop_bath_border(image: Image.Image, strength: float = 0.5, sides: str = 'all') -> Image.Image:
-    """
-    Add an artificial inward shadow/burn from the edges.
-    Implements a compound shadow:
-    1. Sharp, strong layer (chemical edge) - Adjusted: Lower opacity, slightly more blur
-    2. Smooth, subtle layer (vignette/depth) - Adjusted: Higher opacity
-    """
+def _inbound_shadow_soft(image: Image.Image) -> Image.Image:
     width, height = image.size
-    
-    # --- Layer 1: Sharp Shadow ---
-    mask_sharp = Image.new('L', (width, height), 0)
-    draw_sharp = ImageDraw.Draw(mask_sharp)
-    
-    # Very thin margin (User requested 2-4px)
-    # On ~1000px img, 0.003 is 3px.
-    margin_sharp = min(width, height) * 0.003
-    draw_sharp.rectangle([margin_sharp, margin_sharp, width-margin_sharp, height-margin_sharp], fill=255)
-    
-    # Minimal blur for sharpness (matches margin roughly)
-    blur_sharp = min(width, height) * 0.003
-    mask_sharp = mask_sharp.filter(ImageFilter.GaussianBlur(radius=blur_sharp))
-    mask_sharp_inv = ImageOps.invert(mask_sharp)
-    
-    # --- Layer 2: Smooth Shadow ---
-    mask_smooth = Image.new('L', (width, height), 0)
-    draw_smooth = ImageDraw.Draw(mask_smooth)
-    
-    # Margin: 2% (same)
-    margin_smooth = min(width, height) * 0.02
-    draw_smooth.rectangle([margin_smooth, margin_smooth, width-margin_smooth, height-margin_smooth], fill=255)
-    
-    # Blur: 3% (same)
-    blur_smooth = min(width, height) * 0.03
-    mask_smooth = mask_smooth.filter(ImageFilter.GaussianBlur(radius=blur_smooth))
-    mask_smooth_inv = ImageOps.invert(mask_smooth)
-    
-    # --- Combine Masks ---
-    # User request: 
-    # "increase opacity of [smooth] by 10%" -> ~40% (was 30%)
-    # "decrease opacity of sharp shadow to around 30%" -> ~30% (was 55%)
-    # Latest: "soft shadow should only be 25% opacity"
-    
-    sharp_opacity = 0.30
-    smooth_opacity = 0.25
-    
-    # Scale masks by their opacity and strength factor
-    mask_sharp_arr = np.array(mask_sharp_inv).astype(float) * sharp_opacity
-    mask_smooth_arr = np.array(mask_smooth_inv).astype(float) * smooth_opacity
-    
-    # Combine
-    total_mask_arr = mask_sharp_arr + mask_smooth_arr
-    total_mask_arr = np.clip(total_mask_arr, 0, 255) 
-    
-    final_mask = Image.fromarray(total_mask_arr.astype(np.uint8))
-    
-    # Shadow layer (Dark Warm)
-    shadow_layer = Image.new('RGB', (width, height), (15, 10, 10)) 
-    
-    return Image.composite(shadow_layer, image, final_mask)
+    mask = Image.new('L', (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    margin = min(width, height) * 0.03  # bigger inbound shadow as requested
+    draw.rectangle([margin, margin, width - margin, height - margin], fill=255)
+    blur = min(width, height) * 0.045
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=blur))
+    mask_inv = ImageOps.invert(mask)
+    mask_arr = np.array(mask_inv).astype(float) * 0.35  # slightly stronger than before
+    final_mask = Image.fromarray(np.clip(mask_arr, 0, 255).astype(np.uint8))
+    shadow = Image.new('RGB', (width, height), (15, 10, 10))
+    return Image.composite(shadow, image, final_mask)
+
+
+def _inbound_shadow_sharp(image: Image.Image) -> Image.Image:
+    width, height = image.size
+    mask = Image.new('L', (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    margin = min(width, height) * 0.003  # ~2-4px
+    draw.rectangle([margin, margin, width - margin, height - margin], fill=255)
+    blur = min(width, height) * 0.003
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=blur))
+    mask_inv = ImageOps.invert(mask)
+    mask_arr = np.array(mask_inv).astype(float) * 0.30
+    final_mask = Image.fromarray(np.clip(mask_arr, 0, 255).astype(np.uint8))
+    shadow = Image.new('RGB', (width, height), (15, 10, 10))
+    return Image.composite(shadow, image, final_mask)
 
 def _apply_instax_curves(image: Image.Image) -> Image.Image:
     """
@@ -528,17 +497,36 @@ def _add_chemical_edge_distortion(image: Image.Image, intensity: float = 1.0, se
     overlay_g = (left_color_g + right_color_g + top_color_g + bottom_color_g + corner_color_g) * scale
     overlay_b = (left_color_b + right_color_b + top_color_b + bottom_color_b + corner_color_b) * scale
     
-    # Combined mask for blending strength
-    combined_mask = np.maximum.reduce([left_mask, right_mask, top_mask, bottom_mask, 
-                                        corner_mask_warm, corner_mask_cool])
+    # Add crisp burn-out hotspots near edges using thresholded high-frequency noise
+    edge_prox = np.maximum.reduce([
+        np.clip(1 - dist_left / 0.06, 0, 1),
+        np.clip(1 - dist_right / 0.06, 0, 1),
+        np.clip(1 - dist_top / 0.06, 0, 1),
+        np.clip(1 - dist_bottom / 0.06, 0, 1)
+    ])
+    burn_noise = _generate_perlin_noise_2d_fast((height, width), scale=18, octaves=2, seed=(seed + 20) if seed else None)
+    burn_candidates = (burn_noise * edge_prox) > 0.78
+    burn_img = Image.fromarray((burn_candidates.astype(np.uint8) * 255))
+    burn_img = burn_img.filter(ImageFilter.GaussianBlur(radius=1))
+    burn_mask = (np.array(burn_img).astype(float) / 255.0) ** 1.2
     
+    # Warm-white burn color with slight side-dependent tints
+    tl = np.minimum(dist_left, dist_top)
+    tl = np.clip(1 - tl / 0.1, 0, 1)
+    burn_r = 255 * burn_mask
+    burn_g = (210 + 40 * (1 - tl)) * burn_mask
+    burn_b = (190 + 60 * tl) * burn_mask
+    
+    # Boost burn contribution
+    overlay_r += burn_r * 1.2
+    overlay_g += burn_g * 1.2
+    overlay_b += burn_b * 1.2
+
     # Use a hybrid blending approach:
     # - Additive component for visibility on all backgrounds
     # - Screen component for natural light-like behavior
     result = img_arr.copy()
     
-    # Additive blend (works on all backgrounds) with 60% weight
-    # Screen blend (natural light behavior) with 40% weight
     for c, overlay_c in enumerate([overlay_r, overlay_g, overlay_b]):
         additive = result[:, :, c] + overlay_c * 0.6
         screen = result[:, :, c] + overlay_c * 0.4 * (1 - result[:, :, c] / 255)

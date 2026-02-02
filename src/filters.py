@@ -421,8 +421,13 @@ def _add_chemical_edge_distortion(image: Image.Image, intensity: float = 1.0, se
     
     # --- LEFT EDGE: Blue/Cyan/Magenta ---
     left_mask = np.clip(1 - dist_left / edge_width, 0, 1)
-    left_mask = left_mask * (0.6 + 0.4 * noise_left)  # Modulate with noise
-    left_mask = left_mask ** 1.2  # Softer falloff for wider spread
+    left_mask = left_mask * (0.7 + 0.3 * noise_left)  # Less noise modulation for smoother look
+    left_mask = left_mask ** 1.0  # Linear falloff for softer gradient
+    
+    # Apply Gaussian blur to the mask for smoother, less cloud-like appearance
+    left_mask_img = Image.fromarray((left_mask * 255).astype(np.uint8))
+    left_mask_img = left_mask_img.filter(ImageFilter.GaussianBlur(radius=min(width, height) * 0.015))
+    left_mask = np.array(left_mask_img).astype(float) / 255.0
     
     # Color: Mix of cyan and magenta - more saturated
     left_color_r = left_mask * (80 * noise_left + 150 * (1 - noise_left))
@@ -440,8 +445,13 @@ def _add_chemical_edge_distortion(image: Image.Image, intensity: float = 1.0, se
     
     # --- TOP EDGE: Blue with pink/magenta accents ---
     top_mask = np.clip(1 - dist_top / (edge_width * 0.9), 0, 1)
-    top_mask = top_mask * (0.6 + 0.4 * noise_top)
-    top_mask = top_mask ** 1.3
+    top_mask = top_mask * (0.7 + 0.3 * noise_top)  # Less noise modulation
+    top_mask = top_mask ** 1.1  # Softer falloff
+    
+    # Apply Gaussian blur to the mask for smoother, less cloud-like appearance
+    top_mask_img = Image.fromarray((top_mask * 255).astype(np.uint8))
+    top_mask_img = top_mask_img.filter(ImageFilter.GaussianBlur(radius=min(width, height) * 0.012))
+    top_mask = np.array(top_mask_img).astype(float) / 255.0
     
     # Add occasional pink "light leak" spots
     light_leak_noise = _generate_perlin_noise_2d_fast((height, width), scale=30, octaves=2, seed=(seed + 10) if seed else None)

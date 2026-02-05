@@ -119,7 +119,7 @@ The `chemistry/` directory contains PNG overlays that simulate chemical developm
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.24+
 - [pre-commit](https://pre-commit.com/) (optional, for git hooks)
 
 ### Setup

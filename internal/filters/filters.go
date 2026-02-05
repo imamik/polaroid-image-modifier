@@ -313,7 +313,7 @@ func applyChromaticAberration16(img *image.NRGBA64, shift float64) *image.NRGBA6
 	w, h := bounds.Dx(), bounds.Dy()
 	res := image.NewNRGBA64(bounds)
 
-	getPixel := func(x, y float64) (float64, float64, float64) {
+	getPixel := func(x, y float64) (r, b float64) {
 		x0 := math.Floor(x)
 		x1 := x0 + 1
 		y0 := math.Floor(y)
@@ -350,18 +350,17 @@ func applyChromaticAberration16(img *image.NRGBA64, shift float64) *image.NRGBA6
 		c10 := img.NRGBA64At(clampX(x1)+bounds.Min.X, clampY(y0)+bounds.Min.Y)
 		c11 := img.NRGBA64At(clampX(x1)+bounds.Min.X, clampY(y1)+bounds.Min.Y)
 
-		r := (float64(c00.R)*wx0*wy0 + float64(c01.R)*wx0*wy1 + float64(c10.R)*wx1*wy0 + float64(c11.R)*wx1*wy1)
-		g := (float64(c00.G)*wx0*wy0 + float64(c01.G)*wx0*wy1 + float64(c10.G)*wx1*wy0 + float64(c11.G)*wx1*wy1)
-		b := (float64(c00.B)*wx0*wy0 + float64(c01.B)*wx0*wy1 + float64(c10.B)*wx1*wy0 + float64(c11.B)*wx1*wy1)
+		r = (float64(c00.R)*wx0*wy0 + float64(c01.R)*wx0*wy1 + float64(c10.R)*wx1*wy0 + float64(c11.R)*wx1*wy1)
+		b = (float64(c00.B)*wx0*wy0 + float64(c01.B)*wx0*wy1 + float64(c10.B)*wx1*wy0 + float64(c11.B)*wx1*wy1)
 
-		return r, g, b
+		return r, b
 	}
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			gc := img.NRGBA64At(x+bounds.Min.X, y+bounds.Min.Y)
-			rr, _, _ := getPixel(float64(x)+shift, float64(y)+shift)
-			_, _, bb := getPixel(float64(x)-shift, float64(y)-shift)
+			rr, _ := getPixel(float64(x)+shift, float64(y)+shift)
+			_, bb := getPixel(float64(x)-shift, float64(y)-shift)
 
 			res.SetNRGBA64(x+bounds.Min.X, y+bounds.Min.Y, color.NRGBA64{
 				uint16(math.Max(0, math.Min(65535, rr))),
@@ -431,7 +430,7 @@ func applyChemicalDistortion16(img *image.NRGBA64, intensity float64) *image.NRG
 	grid := image.NewNRGBA(image.Rect(0, 0, 32, 32))
 	for y := 0; y < 32; y++ {
 		for x := 0; x < 32; x++ {
-			grid.SetNRGBA(x, y, color.NRGBA{uint8(sr.Intn(256)), uint8(sr.Intn(256)), uint8(sr.Intn(256)), 255})
+			grid.SetNRGBA(x, y, color.NRGBA{uint8(sr.Intn(256)), uint8(sr.Intn(256)), uint8(sr.Intn(256)), 255}) //nolint:gosec // random color generation
 		}
 	}
 	noise := imaging.Resize(grid, w, h, imaging.Lanczos)

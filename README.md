@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/imamik/polaroid-image-modifier/actions/workflows/ci.yml/badge.svg)](https://github.com/imamik/polaroid-image-modifier/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/imamik/polaroid-image-modifier)](https://goreportcard.com/report/github.com/imamik/polaroid-image-modifier)
+[![codecov](https://codecov.io/gh/imamik/polaroid-image-modifier/branch/main/graph/badge.svg)](https://codecov.io/gh/imamik/polaroid-image-modifier)
 [![Go Reference](https://pkg.go.dev/badge/github.com/imamik/polaroid-image-modifier.svg)](https://pkg.go.dev/github.com/imamik/polaroid-image-modifier)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/imamik/polaroid-image-modifier)](https://github.com/imamik/polaroid-image-modifier/releases)

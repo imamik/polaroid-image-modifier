@@ -60,8 +60,8 @@ func init() {
 	processCmd.Flags().StringVarP(&filmType, "film", "t", "polaroid", "Film type: polaroid, instax")
 	processCmd.Flags().StringVarP(&chemistryDir, "chemistry", "c", "", "Directory containing chemistry overlay images")
 	processCmd.Flags().IntVarP(&dpi, "dpi", "d", 300, "Output DPI (for reference)")
-	processCmd.MarkFlagRequired("input")
-	processCmd.MarkFlagRequired("output")
+	_ = processCmd.MarkFlagRequired("input")
+	_ = processCmd.MarkFlagRequired("output")
 
 	batchCmd.Flags().StringVarP(&inputPath, "input", "i", "", "Input directory (required)")
 	batchCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output directory (required)")
@@ -69,8 +69,8 @@ func init() {
 	batchCmd.Flags().StringVarP(&filmType, "film", "t", "polaroid", "Film type: polaroid, instax")
 	batchCmd.Flags().StringVarP(&chemistryDir, "chemistry", "c", "", "Directory containing chemistry overlay images")
 	batchCmd.Flags().IntVarP(&dpi, "dpi", "d", 300, "Output DPI (for reference)")
-	batchCmd.MarkFlagRequired("input")
-	batchCmd.MarkFlagRequired("output")
+	_ = batchCmd.MarkFlagRequired("input")
+	_ = batchCmd.MarkFlagRequired("output")
 
 	rootCmd.AddCommand(processCmd)
 	rootCmd.AddCommand(batchCmd)
@@ -148,7 +148,7 @@ func runBatch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := os.MkdirAll(outputPath, 0755); err != nil {
+	if err := os.MkdirAll(outputPath, 0750); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 

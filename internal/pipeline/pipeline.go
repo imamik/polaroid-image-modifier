@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/disintegration/imaging"
+
 	"github.com/imamik/polaroid-image-modifier/internal/filters"
 	"github.com/imamik/polaroid-image-modifier/internal/frames"
 )

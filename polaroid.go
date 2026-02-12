@@ -29,6 +29,7 @@ type Options struct {
 	FilmType     FilmType
 	ChemistryDir string
 	DPI          int
+	Seed         int64
 }
 
 func DefaultOptions() Options {
@@ -37,6 +38,7 @@ func DefaultOptions() Options {
 		FilmType:     FilmPolaroid,
 		ChemistryDir: "",
 		DPI:          300,
+		Seed:         0,
 	}
 }
 
@@ -46,6 +48,7 @@ func Process(inputPath, outputPath string, opts Options) error {
 		FilmType:     opts.FilmType,
 		ChemistryDir: opts.ChemistryDir,
 		DPI:          opts.DPI,
+		Seed:         opts.Seed,
 	}
 	return pipeline.Process(inputPath, outputPath, pipelineOpts)
 }
@@ -56,13 +59,11 @@ func ProcessImage(img image.Image, opts Options) (image.Image, error) {
 		return nil, err
 	}
 
-	proc := pipeline.New("")
-	proc.SetChemistryDir(opts.ChemistryDir)
-
 	filterOpts := filters.Options{
 		FilmType:           opts.FilmType,
 		ChemicalDistortion: true,
 		ChemistryOverlay:   nil,
+		Seed:               opts.Seed,
 	}
 
 	filtered := filters.Apply(img, filterOpts)

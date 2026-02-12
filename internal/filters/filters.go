@@ -22,6 +22,48 @@ type Options struct {
 	FilmType           FilmType
 	ChemicalDistortion bool
 	ChemistryOverlay   image.Image
+	Seed               int64
+	GrainAmount        float64
+	HalationAmount     float64
+}
+
+type applyContext struct {
+	rng *rand.Rand
+}
+
+type stageFn func(*image.NRGBA64, *applyContext) *image.NRGBA64
+
+type filmProfile struct {
+	vignetteIntensity     float64
+	halationAmount        float64
+	grainAmount           float64
+	chromaticShift        float64
+	chemicalDistortionAmt float64
+	saturationDelta       float64
+}
+
+func profileForFilm(filmType FilmType) filmProfile {
+	// Tuned from instant-film references: Polaroid tends to render warmer highlights and
+	// stronger halation/vignette, while Instax is cleaner/cooler with milder edge effects.
+	if filmType == FilmTypeInstax {
+		return filmProfile{
+			vignetteIntensity:     0.25,
+			halationAmount:        0.08,
+			grainAmount:           0.018,
+			chromaticShift:        1.2,
+			chemicalDistortionAmt: 0.85,
+			saturationDelta:       -10.0,
+		}
+	}
+
+	return filmProfile{
+		vignetteIntensity:     0.4,
+		halationAmount:        0.17,
+		grainAmount:           0.021,
+		chromaticShift:        1.5,
+		chemicalDistortionAmt: 1.0,
+		saturationDelta:       -15.0,
+	}
 }
 
 func Apply(img image.Image, opts Options) image.Image {
@@ -36,35 +78,83 @@ func Apply(img image.Image, opts Options) image.Image {
 		}
 	}
 
-	work = applyLocalShadowsHighlights16(work, 0.6, 0.4)
-	work = applyChromaticAberration16(work, 1.5)
-	work = applySoftnessBloom16(work)
-
-	vignetteIntensity := 0.4
-	if opts.FilmType == FilmTypeInstax {
-		vignetteIntensity = 0.25
+	ctx := &applyContext{rng: rngFromSeed(opts.Seed)}
+	for _, stage := range buildStages(opts) {
+		work = stage(work, ctx)
 	}
-	work = applyVignette16(work, vignetteIntensity)
-
-	if opts.FilmType == FilmTypeInstax {
-		work = applyInstaxCurves16(work)
-	} else {
-		work = applyVintageCurves16(work)
-	}
-	work = applySaturation16(work, -15.0)
-
-	if opts.ChemistryOverlay != nil {
-		work = applyChemistryOverlay16(work, opts.ChemistryOverlay)
-	} else if opts.ChemicalDistortion {
-		work = applyChemicalDistortion16(work, 1.0)
-	}
-	work = applyInboundShadow16(work, 0.03, 0.045, 0.35)
-	work = applyInboundShadow16(work, 0.003, 0.003, 0.30)
-
-	work = applyFilmGrain16(work, 0.021)
-	work = applyUnifiedHDRPolish16(work, 0.5, 0.0, 1.25, 18, 0.85)
 
 	return imaging.Clone(work)
+}
+
+func rngFromSeed(seed int64) *rand.Rand {
+	if seed == 0 {
+		seed = time.Now().UnixNano()
+	}
+	return rand.New(rand.NewSource(seed))
+}
+
+func buildStages(opts Options) []stageFn {
+	profile := profileForFilm(opts.FilmType)
+
+	halationAmount := opts.HalationAmount
+	if halationAmount <= 0 {
+		halationAmount = profile.halationAmount
+	}
+
+	grainAmount := opts.GrainAmount
+	if grainAmount <= 0 {
+		grainAmount = profile.grainAmount
+	}
+
+	stages := []stageFn{
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applyLocalShadowsHighlights16(img, 0.6, 0.4)
+		},
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applyChromaticAberration16(img, profile.chromaticShift)
+		},
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 { return applySoftnessBloom16(img) },
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 { return applyHalation16(img, halationAmount) },
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applyVignette16(img, profile.vignetteIntensity)
+		},
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			if opts.FilmType == FilmTypeInstax {
+				return applyInstaxCurves16(img)
+			}
+			return applyVintageCurves16(img)
+		},
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applySaturation16(img, profile.saturationDelta)
+		},
+	}
+
+	if opts.ChemistryOverlay != nil {
+		stages = append(stages, func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applyChemistryOverlay16(img, opts.ChemistryOverlay)
+		})
+	} else if opts.ChemicalDistortion {
+		stages = append(stages, func(img *image.NRGBA64, ctx *applyContext) *image.NRGBA64 {
+			return applyChemicalDistortion16(img, profile.chemicalDistortionAmt, ctx.rng)
+		})
+	}
+
+	stages = append(stages,
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applyInboundShadow16(img, 0.03, 0.045, 0.35)
+		},
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applyInboundShadow16(img, 0.003, 0.003, 0.30)
+		},
+		func(img *image.NRGBA64, ctx *applyContext) *image.NRGBA64 {
+			return applyFilmGrain16(img, grainAmount, ctx.rng)
+		},
+		func(img *image.NRGBA64, _ *applyContext) *image.NRGBA64 {
+			return applyUnifiedHDRPolish16(img, 0.5, 0.0, 1.25, 18, 0.85)
+		},
+	)
+
+	return stages
 }
 
 func applyUnifiedHDRPolish16(img *image.NRGBA64, lowCutoff, highCutoff, contrastFactor, liftAmount, gammaExp float64) *image.NRGBA64 {
@@ -312,6 +402,8 @@ func applyChromaticAberration16(img *image.NRGBA64, shift float64) *image.NRGBA6
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
 	res := image.NewNRGBA64(bounds)
+	cx, cy := float64(w)/2.0, float64(h)/2.0
+	maxR := math.Sqrt(cx*cx + cy*cy)
 
 	getPixel := func(x, y float64) (r, b float64) {
 		x0 := math.Floor(x)
@@ -359,8 +451,11 @@ func applyChromaticAberration16(img *image.NRGBA64, shift float64) *image.NRGBA6
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			gc := img.NRGBA64At(x+bounds.Min.X, y+bounds.Min.Y)
-			rr, _ := getPixel(float64(x)+shift, float64(y)+shift)
-			_, bb := getPixel(float64(x)-shift, float64(y)-shift)
+			dx, dy := float64(x)-cx, float64(y)-cy
+			radial := math.Sqrt(dx*dx+dy*dy) / maxR
+			localShift := shift * (0.25 + radial*0.95)
+			rr, _ := getPixel(float64(x)+localShift, float64(y)+localShift*0.5)
+			_, bb := getPixel(float64(x)-localShift, float64(y)-localShift*0.5)
 
 			res.SetNRGBA64(x+bounds.Min.X, y+bounds.Min.Y, color.NRGBA64{
 				uint16(math.Max(0, math.Min(65535, rr))),
@@ -387,17 +482,24 @@ func applySaturation16(img *image.NRGBA64, amount float64) *image.NRGBA64 {
 	return res
 }
 
-func applyFilmGrain16(img *image.NRGBA64, amount float64) *image.NRGBA64 {
+func applyFilmGrain16(img *image.NRGBA64, amount float64, r *rand.Rand) *image.NRGBA64 {
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
-	src := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(src)
 	res := image.NewNRGBA64(bounds)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			c := img.NRGBA64At(x+bounds.Min.X, y+bounds.Min.Y)
-			n := r.NormFloat64() * 65535 * amount
-			res.SetNRGBA64(x+bounds.Min.X, y+bounds.Min.Y, color.NRGBA64{uint16(math.Max(0, math.Min(65535, float64(c.R)+n))), uint16(math.Max(0, math.Min(65535, float64(c.G)+n))), uint16(math.Max(0, math.Min(65535, float64(c.B)+n))), c.A})
+			lum := (0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)) / 65535.0
+			strength := amount * (1.25 - 0.65*lum)
+			lumaNoise := r.NormFloat64() * 65535 * strength
+			chromaNoiseR := r.NormFloat64() * 65535 * strength * 0.2
+			chromaNoiseB := r.NormFloat64() * 65535 * strength * 0.2
+			res.SetNRGBA64(x+bounds.Min.X, y+bounds.Min.Y, color.NRGBA64{
+				uint16(math.Max(0, math.Min(65535, float64(c.R)+lumaNoise+chromaNoiseR))),
+				uint16(math.Max(0, math.Min(65535, float64(c.G)+lumaNoise))),
+				uint16(math.Max(0, math.Min(65535, float64(c.B)+lumaNoise+chromaNoiseB))),
+				c.A,
+			})
 		}
 	}
 	return res
@@ -423,30 +525,81 @@ func applyChemistryOverlay16(img *image.NRGBA64, overlay image.Image) *image.NRG
 	return res
 }
 
-func applyChemicalDistortion16(img *image.NRGBA64, intensity float64) *image.NRGBA64 {
+func applyChemicalDistortion16(img *image.NRGBA64, intensity float64, sr *rand.Rand) *image.NRGBA64 {
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
-	sr := rand.New(rand.NewSource(time.Now().UnixNano()))
-	grid := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 32; x++ {
-			grid.SetNRGBA(x, y, color.NRGBA{uint8(sr.Intn(256)), uint8(sr.Intn(256)), uint8(sr.Intn(256)), 255}) //nolint:gosec // random color generation
+	grid := image.NewNRGBA(image.Rect(0, 0, 40, 40))
+	for y := 0; y < 40; y++ {
+		for x := 0; x < 40; x++ {
+			v := uint8(sr.Intn(256)) //nolint:gosec // pseudo-random effect pattern
+			grid.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
 		}
 	}
 	noise := imaging.Resize(grid, w, h, imaging.Lanczos)
+
+	streakGrid := image.NewNRGBA(image.Rect(0, 0, maxInt(w/28, 8), maxInt(h/6, 8)))
+	for y := 0; y < streakGrid.Bounds().Dy(); y++ {
+		for x := 0; x < streakGrid.Bounds().Dx(); x++ {
+			v := uint8(sr.Intn(256)) //nolint:gosec // pseudo-random effect pattern
+			streakGrid.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
+		}
+	}
+	streakMap := imaging.Resize(streakGrid, w, h, imaging.Linear)
+	streakMap = imaging.Blur(streakMap, float64(maxInt(w, h))*0.003)
+
 	res := image.NewNRGBA64(bounds)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			c := img.NRGBA64At(x+bounds.Min.X, y+bounds.Min.Y)
 			nc := color.NRGBA64Model.Convert(noise.At(x, y)).(color.NRGBA64)
-			dl, dr, dt, db := float64(x)/float64(w), 1.0-float64(x)/float64(w), float64(y)/float64(h), 1.0-float64(y)/float64(h)
-			ew := 0.12
-			mask := math.Max(math.Max(0, 1.0-dl/ew), math.Max(math.Max(0, 1.0-dr/ew), math.Max(math.Max(0, 1.0-dt/ew), math.Max(0, 1.0-db/ew))))
-			oR, oG, oB := mask*(38550*float64(nc.R)/65535.0+25700), mask*(30855*float64(nc.G)/65535.0+12850), mask*(51415*float64(nc.B)/65535.0+25700)
+			sc := streakMap.NRGBAAt(x, y)
+
+			edgeX := math.Max(0, 1.0-math.Min(float64(x), float64(w-x))/float64(w)*4.2)
+			edgeY := math.Max(0, 1.0-math.Min(float64(y), float64(h-y))/float64(h)*4.2)
+			bottomBias := math.Pow(float64(y)/float64(maxInt(h-1, 1)), 1.7)
+			streak := (float64(sc.R)/255.0)*0.5 + 0.5
+			chemMask := math.Max(edgeX, edgeY*0.8)*0.55 + bottomBias*0.45
+			chemMask *= streak
+
+			oR := chemMask * (28000 + 30000*float64(nc.R)/65535.0)
+			oG := chemMask * (18000 + 22000*float64(nc.G)/65535.0)
+			oB := chemMask * (32000 + 26000*float64(nc.B)/65535.0)
 			fr := 65535.0 - ((65535.0 - float64(c.R)) * (65535.0 - oR*intensity) / 65535.0)
 			fg := 65535.0 - ((65535.0 - float64(c.G)) * (65535.0 - oG*intensity) / 65535.0)
 			fb := 65535.0 - ((65535.0 - float64(c.B)) * (65535.0 - oB*intensity) / 65535.0)
 			res.SetNRGBA64(x+bounds.Min.X, y+bounds.Min.Y, color.NRGBA64{uint16(math.Min(65535, fr)), uint16(math.Min(65535, fg)), uint16(math.Min(65535, fb)), c.A})
+		}
+	}
+	return res
+}
+
+func applyHalation16(img *image.NRGBA64, amount float64) *image.NRGBA64 {
+	if amount <= 0 {
+		return img
+	}
+	bounds := img.Bounds()
+	base8 := imaging.Clone(img)
+	high8 := imaging.AdjustFunc(base8, func(c color.NRGBA) color.NRGBA {
+		if c.R < 180 && c.G < 180 && c.B < 180 {
+			return color.NRGBA{0, 0, 0, c.A}
+		}
+		return c
+	})
+	blur := imaging.Blur(high8, float64(minInt(bounds.Dx(), bounds.Dy()))*0.02)
+	res := image.NewNRGBA64(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			c := img.NRGBA64At(x, y)
+			h := blur.NRGBAAt(x-bounds.Min.X, y-bounds.Min.Y)
+			hr := float64(h.R) * 257.0 * amount * 0.9
+			hg := float64(h.G) * 257.0 * amount * 0.45
+			hb := float64(h.B) * 257.0 * amount * 0.2
+			res.SetNRGBA64(x, y, color.NRGBA64{
+				uint16(math.Max(0, math.Min(65535, float64(c.R)+hr))),
+				uint16(math.Max(0, math.Min(65535, float64(c.G)+hg))),
+				uint16(math.Max(0, math.Min(65535, float64(c.B)+hb))),
+				c.A,
+			})
 		}
 	}
 	return res
@@ -498,6 +651,13 @@ func applyLocalShadowsHighlights16(img *image.NRGBA64, amountShadows, amountHigh
 		}
 	}
 	return res
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func minInt(a, b int) int {

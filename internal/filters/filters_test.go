@@ -1,6 +1,7 @@
 package filters
 
 import (
+	"hash/fnv"
 	"image"
 	"image/color"
 	"testing"
@@ -165,5 +166,51 @@ func BenchmarkApply(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Apply(img, opts)
+	}
+}
+
+func imageFingerprint(img image.Image) uint64 {
+	h := fnv.New64a()
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			_, _ = h.Write([]byte{byte(r >> 8), byte(g >> 8), byte(b >> 8), byte(a >> 8)})
+		}
+	}
+	return h.Sum64()
+}
+
+func TestApplyDeterministicWithSeed(t *testing.T) {
+	img := createTestImage(80, 80)
+	opts := Options{FilmType: FilmTypePolaroid, ChemicalDistortion: true, Seed: 42}
+	out1 := Apply(img, opts)
+	out2 := Apply(img, opts)
+	if imageFingerprint(out1) != imageFingerprint(out2) {
+		t.Fatal("expected deterministic output with fixed seed")
+	}
+}
+
+func TestApplyDifferentSeedVariesOutput(t *testing.T) {
+	img := createTestImage(80, 80)
+	out1 := Apply(img, Options{FilmType: FilmTypePolaroid, ChemicalDistortion: true, Seed: 1})
+	out2 := Apply(img, Options{FilmType: FilmTypePolaroid, ChemicalDistortion: true, Seed: 2})
+	if imageFingerprint(out1) == imageFingerprint(out2) {
+		t.Fatal("expected different output fingerprints for different seeds")
+	}
+}
+
+func TestProfileForFilmDefaults(t *testing.T) {
+	polaroid := profileForFilm(FilmTypePolaroid)
+	instax := profileForFilm(FilmTypeInstax)
+
+	if polaroid.halationAmount <= instax.halationAmount {
+		t.Fatalf("expected polaroid halation (%f) > instax (%f)", polaroid.halationAmount, instax.halationAmount)
+	}
+	if polaroid.vignetteIntensity <= instax.vignetteIntensity {
+		t.Fatalf("expected polaroid vignette (%f) > instax (%f)", polaroid.vignetteIntensity, instax.vignetteIntensity)
+	}
+	if polaroid.chromaticShift <= instax.chromaticShift {
+		t.Fatalf("expected polaroid chromatic shift (%f) > instax (%f)", polaroid.chromaticShift, instax.chromaticShift)
 	}
 }

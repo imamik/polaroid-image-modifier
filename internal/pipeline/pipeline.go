@@ -20,6 +20,8 @@ type Processor struct {
 	image            image.Image
 	chemistryDir     string
 	chemistryOverlay image.Image
+	seed             int64
+	warnings         []string
 }
 
 type Options struct {
@@ -27,6 +29,8 @@ type Options struct {
 	FilmType     filters.FilmType
 	ChemistryDir string
 	DPI          int
+	Seed         int64
+	Debug        bool
 }
 
 func New(inputPath string) *Processor {
@@ -37,6 +41,14 @@ func New(inputPath string) *Processor {
 
 func (p *Processor) SetChemistryDir(dir string) {
 	p.chemistryDir = dir
+}
+
+func (p *Processor) SetSeed(seed int64) {
+	p.seed = seed
+}
+
+func (p *Processor) Warnings() []string {
+	return append([]string(nil), p.warnings...)
 }
 
 func (p *Processor) Load() error {
@@ -68,7 +80,7 @@ func (p *Processor) Prepare(frameType frames.FrameType) error {
 	return nil
 }
 
-func (p *Processor) loadChemistryOverlay() {
+func (p *Processor) loadChemistryOverlay() error {
 	chemistryDir := p.chemistryDir
 	if chemistryDir == "" {
 		chemistryDir = "chemistry"
@@ -82,7 +94,7 @@ func (p *Processor) loadChemistryOverlay() {
 
 	files, err := os.ReadDir(chemistryDir)
 	if err != nil {
-		return
+		return fmt.Errorf("read chemistry dir %q: %w", chemistryDir, err)
 	}
 
 	var pngFiles []string
@@ -93,22 +105,27 @@ func (p *Processor) loadChemistryOverlay() {
 	}
 
 	if len(pngFiles) == 0 {
-		return
+		return fmt.Errorf("no PNG chemistry overlays found in %q", chemistryDir)
 	}
 
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	seed := p.seed
+	if seed == 0 {
+		seed = time.Now().UnixNano()
+	}
+	r := rand.New(rand.NewSource(seed))
 	chosen := pngFiles[r.Intn(len(pngFiles))]
 	overlayPath := filepath.Join(chemistryDir, chosen)
 
 	ovImage, err := imaging.Open(overlayPath)
 	if err != nil {
-		return
+		return fmt.Errorf("open chemistry overlay %q: %w", overlayPath, err)
 	}
 
 	if r.Float64() < 0.5 {
 		ovImage = imaging.FlipH(ovImage)
 	}
 	p.chemistryOverlay = ovImage
+	return nil
 }
 
 func (p *Processor) ApplyFilter(filmType filters.FilmType) error {
@@ -116,12 +133,15 @@ func (p *Processor) ApplyFilter(filmType filters.FilmType) error {
 		return fmt.Errorf("no image loaded")
 	}
 
-	p.loadChemistryOverlay()
+	if err := p.loadChemistryOverlay(); err != nil {
+		p.warnings = append(p.warnings, err.Error())
+	}
 
 	opts := filters.Options{
 		FilmType:           filmType,
 		ChemicalDistortion: true,
 		ChemistryOverlay:   p.chemistryOverlay,
+		Seed:               p.seed,
 	}
 
 	p.image = filters.Apply(p.image, opts)
@@ -164,6 +184,7 @@ func Process(inputPath, outputPath string, opts Options) error {
 	if opts.ChemistryDir != "" {
 		proc.SetChemistryDir(opts.ChemistryDir)
 	}
+	proc.SetSeed(opts.Seed)
 
 	if err := proc.Load(); err != nil {
 		return fmt.Errorf("load: %w", err)
@@ -183,6 +204,12 @@ func Process(inputPath, outputPath string, opts Options) error {
 
 	if err := proc.Save(outputPath); err != nil {
 		return fmt.Errorf("save: %w", err)
+	}
+
+	if opts.Debug && len(proc.warnings) > 0 {
+		for _, w := range proc.warnings {
+			fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+		}
 	}
 
 	return nil

@@ -254,6 +254,7 @@ func TestProcess(t *testing.T) {
 		FrameType: frames.FrameTypePolaroid600,
 		FilmType:  filters.FilmTypePolaroid,
 		DPI:       300,
+		Seed:      99,
 	}
 
 	err := Process(testImagePath, outputPath, opts)
@@ -322,5 +323,26 @@ func TestOptions(t *testing.T) {
 	}
 	if opts.DPI != 300 {
 		t.Errorf("Options.DPI = %v, want %v", opts.DPI, 300)
+	}
+}
+
+func TestProcessor_ApplyFilterTracksChemistryWarnings(t *testing.T) {
+	tmpDir := t.TempDir()
+	testImagePath := filepath.Join(tmpDir, "test.png")
+	saveTestImage(t, createTestImage(100, 100), testImagePath)
+
+	proc := New(testImagePath)
+	proc.SetChemistryDir(filepath.Join(tmpDir, "missing-chemistry"))
+	if err := proc.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if err := proc.Prepare(frames.FrameTypePolaroid600); err != nil {
+		t.Fatalf("Prepare() failed: %v", err)
+	}
+	if err := proc.ApplyFilter(filters.FilmTypePolaroid); err != nil {
+		t.Fatalf("ApplyFilter() failed: %v", err)
+	}
+	if len(proc.Warnings()) == 0 {
+		t.Fatal("expected chemistry warning when directory is missing")
 	}
 }

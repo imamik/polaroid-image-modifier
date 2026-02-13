@@ -46,6 +46,9 @@ func TestDefaultOptions(t *testing.T) {
 	if opts.DPI != 300 {
 		t.Errorf("DefaultOptions().DPI = %v, want 300", opts.DPI)
 	}
+	if opts.Seed != 0 {
+		t.Errorf("DefaultOptions().Seed = %v, want 0", opts.Seed)
+	}
 }
 
 func TestProcess(t *testing.T) {
@@ -183,6 +186,7 @@ func TestOptionsStruct(t *testing.T) {
 		FilmType:     FilmPolaroid,
 		ChemistryDir: "/custom/path",
 		DPI:          600,
+		Seed:         1234,
 	}
 
 	if opts.FrameType != FramePolaroid600 {
@@ -196,5 +200,8 @@ func TestOptionsStruct(t *testing.T) {
 	}
 	if opts.DPI != 600 {
 		t.Errorf("Options.DPI = %v, want %v", opts.DPI, 600)
+	}
+	if opts.Seed != 1234 {
+		t.Errorf("Options.Seed = %v, want %v", opts.Seed, 1234)
 	}
 }
